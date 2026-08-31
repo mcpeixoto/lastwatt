@@ -26,6 +26,10 @@ This project started with a forensic post-mortem of a real outage:
 
 Two failures. Nothing shed load — the machine averaged **28 W** against a **42 Wh** battery. And the one emergency action that did fire *could not succeed*, because it had never been configured.
 
+**This was not a one-off.** The same machine died the same way three weeks earlier: mains lost, nothing shed, the same critical-battery suspend fired into the same unconfigured hibernation, same hard death. It stayed dark for 3 h 35 m and 4 h 52 m respectively, because consumer laptop firmware has no "restore on AC power loss" — both times someone had to walk over and press the button.
+
+Runtime also varied by an hour between the two events (1 h 53 m vs 2 h 55 m) purely from what happened to be running. That spread *is* the opportunity: on a laptop server, runtime is a function of load, and load is something software can control.
+
 Both are things `lastwatt` exists to prevent. `lastwatt doctor` finds the second class of problem on any machine.
 
 ---
