@@ -6,7 +6,15 @@ A laptop running as a home server already has a UPS bolted to it: its battery. B
 
 `lastwatt` turns that battery into real ride-through time. It detects mains loss in milliseconds, progressively sheds load in reversible stages, and restores the **exact** prior state when power returns — with no human involvement.
 
-On the machine it was written for, that took runtime from **1 h 52 m to a projected 4–5 h** on the same worn-out battery.
+On the machine it was written for, that projects runtime from a measured **1 h 52 m** to roughly **4–5 h** on the same worn-out battery.
+
+### On the numbers
+
+Runtime figures here are *measured*; savings are *projected*. That distinction matters, because many laptop ECs — including this one — report `power_now` as `0` while on mains, so the only honest way to measure a saving is an actual unplug test.
+
+Be especially wary of per-component wattage. `nvidia-smi` on this machine's mobile Turing reports ~9.8 W at idle, which would be the single largest consumer. But the battery measured the **whole machine** at 12–13.6 W steady during a real outage — leaving 3.8 W for the CPU, RAM, NVMe, panel and NIC combined. The GPU reading is a nominal floor, not a measurement. `lastwatt` trusts the battery, not the component.
+
+The real win is not any single component. It is that the reference outage started at **38 W** and took 84 minutes to coast down to its 12 W floor. Shedding on the first second starts you at the floor instead of ending there.
 
 ---
 
@@ -40,7 +48,7 @@ Load is shed in tiers. Each tier has its own trigger and its own reversal:
 
 | Tier | Trigger | What it sheds |
 |------|---------|---------------|
-| 1 — instant | the moment mains drops | panel backlight, discrete GPU (→ D3cold), wifi/bluetooth radios, VNC, printing, mDNS, maintenance timers, idle disks |
+| 1 — instant | the moment mains drops | panel backlight, GPU persistence daemon, wifi/bluetooth radios, VNC, printing, mDNS, maintenance timers, idle disks |
 | 2 — edge | 90 s sustained outage | public-facing containers, tunnels, reverse proxy |
 | 3 — stateful | < 50% or < 45 min left | mail queue, databases — each with a generous grace period — then the container runtime |
 | 4 — desktop | < 30% | the display manager and the whole graphical session |

@@ -82,6 +82,19 @@ func doctor() int {
 		}
 	}
 
+	// 3b. A discrete GPU with no _PR3 power resource cannot reach D3cold at all,
+	//     so no amount of shedding will suspend it. Better to know than to
+	//     chase a saving the hardware cannot deliver.
+	if b, err := os.ReadFile("/proc/driver/nvidia/gpus/0000:01:00.0/power"); err == nil {
+		if strings.Contains(string(b), "Runtime D3 status:          Not supported") {
+			warn("the discrete GPU does not support Runtime D3 on this hardware",
+				"The BIOS exposes no _PR3 power resource on the GPU's root port, so the card cannot be suspended and will draw its idle power whenever the driver is loaded. Note also that nvidia-smi's idle wattage on mobile Turing is often a nominal floor, not a measurement -- verify against the battery's own power_now while discharging.",
+				"nothing to configure; budget for this draw, or unload the nvidia modules once the display manager is stopped")
+		} else {
+			ok("discrete GPU supports Runtime D3")
+		}
+	}
+
 	// 4. A crashlooping container burns CPU indefinitely and blocks deep C-states.
 	if _, err := exec.LookPath("docker"); err == nil {
 		out, _ := exec.Command("docker", "ps", "--format", "{{.Names}}\t{{.Status}}").Output()

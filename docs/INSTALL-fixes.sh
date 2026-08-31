@@ -49,7 +49,24 @@ for u in zfs-zed.service zfs-import-cache.service zfs-mount.service zfs-share.se
 done
 
 say "Install lastwatt"
-make -C "$(dirname "$0")/.." install
+# Deliberately not `make install`: that would run the Go toolchain as root and
+# leave root-owned build caches in your home directory. Build as your user
+# first (`make build`), then this just copies the artefacts into place.
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+if [ ! -x "$REPO/lastwatt" ]; then
+    echo "  ERROR: $REPO/lastwatt not built. Run 'make build' as your user first." >&2
+    exit 1
+fi
+install -Dm755 "$REPO/lastwatt" /usr/local/bin/lastwatt
+install -Dm644 "$REPO/packaging/systemd/lastwatt.service" /etc/systemd/system/lastwatt.service
+if [ ! -f /etc/lastwatt/lastwatt.toml ]; then
+    install -Dm644 "$REPO/configs/lastwatt.toml" /etc/lastwatt/lastwatt.toml
+    echo "  installed config to /etc/lastwatt/lastwatt.toml"
+else
+    echo "  kept existing /etc/lastwatt/lastwatt.toml"
+fi
+systemctl daemon-reload
+echo "  installed /usr/local/bin/lastwatt and lastwatt.service (not enabled yet)"
 
 say "Done. Next steps (as your user):"
 cat <<'NEXT'

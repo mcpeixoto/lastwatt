@@ -38,8 +38,19 @@ immediate = true
   path  = "/sys/class/backlight/intel_backlight/bl_power"
   value = "4"
 
-  # The discrete GPU idles at ~10 W doing nothing. nvidia-persistenced holds a
-  # handle on it, which is what prevents runtime D3cold suspend.
+  # Stopping nvidia-persistenced releases the driver's handle on the dGPU. On
+  # hardware that supports NVIDIA Runtime D3 this lets the card reach D3cold and
+  # is worth several watts.
+  #
+  # It is NOT worth that on this machine, and the reason is worth recording:
+  # the BIOS exposes no _PR3 power resource on the GPU's root port, so the
+  # driver reports "Runtime D3 status: Not supported" and the card stays in
+  # D0/P8 regardless. `lastwatt doctor` checks for this.
+  #
+  # Do not trust nvidia-smi's idle wattage here either. It claims ~9.8 W, but
+  # the battery measured the WHOLE machine at 12-13.6 W steady during a real
+  # outage -- which would leave 3.8 W for the CPU, RAM, NVMe, panel and NIC
+  # combined. The reading is a floor value, not a measurement.
   [[tiers.actions]]
   type  = "systemd"
   units = ["nvidia-persistenced.service"]
