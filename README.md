@@ -1,3 +1,14 @@
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="lastwatt" width="640">
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Go 1.24+" src="https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white">
+  <img alt="Linux" src="https://img.shields.io/badge/platform-linux-333?logo=linux&logoColor=white">
+  <img alt="systemd" src="https://img.shields.io/badge/init-systemd-30a3dc">
+</p>
+
 # lastwatt
 
 **Keep a laptop-as-server alive through a mains outage by shedding load instead of shutting down.**
