@@ -1,0 +1,33 @@
+[Unit]
+Description=lastwatt — survive power outages on internal battery
+Documentation=https://github.com/mcpeixoto/lastwatt
+# Start late enough that docker and the display manager exist to be queried,
+# but do not depend on them: lastwatt must run even if they are broken.
+After=multi-user.target docker.service
+Wants=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lastwatt --config /etc/lastwatt/lastwatt.toml run
+Restart=always
+RestartSec=5s
+
+# Root is required to stop units, write sysfs, unmount and power off.
+# CAP_NET_ADMIN is what lets the daemon bind the kernel uevent multicast group;
+# without it lastwatt still works, but falls back to polling alone.
+AmbientCapabilities=CAP_NET_ADMIN
+
+StateDirectory=lastwatt
+StateDirectoryMode=0755
+
+# This process is the thing keeping the machine alive during an outage; it must
+# not be an OOM killer candidate.
+OOMScoreAdjust=-500
+
+# On stop, leave the machine in whatever state it is in. Restoring here would
+# undo a deliberate shed during a package upgrade.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

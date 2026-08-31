@@ -1,0 +1,182 @@
+# lastwatt configuration — ASUS ROG Strix G531GU running as a home server.
+#
+# Measured baseline on this host: ~22-28 W idle, 42.2 Wh usable battery
+# (63.9% of its 66 Wh design capacity) => roughly 1.5-1.9 h of runtime.
+# With tiers 1-4 engaged the draw lands near 8-11 W => roughly 4-5 h.
+#
+# Guiding constraint: this laptop needs a physical button press to come back
+# after a power-off, so the goal is to stay alive as long as possible and treat
+# shutdown as a last resort, not a first response.
+
+[general]
+poll_interval = "1s"
+restore_delay = "10s"     # mains must be stable this long before restoring
+ewma_alpha    = 0.2       # ~5s time constant on the draw estimate
+state_file    = "/var/lib/lastwatt/state.json"
+report_dir    = "/var/lib/lastwatt/reports"
+
+[power]
+ac      = "AC0"
+battery = "BAT0"
+
+[notify]
+wall    = true
+desktop = true
+# webhook_url = "https://ntfy.sh/your-topic"   # flushed when the network returns
+
+# --------------------------------------------------------------------------
+# Tier 1 — fires the instant mains drops.
+# Everything here is cheap, reversible and invisible to running services.
+# --------------------------------------------------------------------------
+[[tiers]]
+name      = "instant"
+immediate = true
+
+  # The panel is the cheapest win and the most reversible thing on the machine.
+  [[tiers.actions]]
+  type  = "sysfs"
+  path  = "/sys/class/backlight/intel_backlight/bl_power"
+  value = "4"
+
+  # The discrete GPU idles at ~10 W doing nothing. nvidia-persistenced holds a
+  # handle on it, which is what prevents runtime D3cold suspend.
+  [[tiers.actions]]
+  type  = "systemd"
+  units = ["nvidia-persistenced.service"]
+
+  # Ethernet is the only link in use; both radios are powered but idle.
+  [[tiers.actions]]
+  type    = "rfkill"
+  devices = ["wifi", "bluetooth"]
+
+  # Services with no purpose during an outage.
+  [[tiers.actions]]
+  type  = "systemd"
+  units = [
+    "x11vnc.service",
+    "gnome-remote-desktop.service",
+    "cups.service",
+    "cups-browsed.service",
+    "avahi-daemon.service",
+    "redis-server.service",
+    "qipc.service",
+    "zfs-zed.service",
+    "ModemManager.service",
+    "wpa_supplicant.service",
+  ]
+
+  # Maintenance timers, masked so nothing re-triggers them mid-outage. Runtime
+  # masking is used so a reboot always comes back clean.
+  [[tiers.actions]]
+  type = "systemd"
+  mask = true
+  units = [
+    "apt-daily.timer",
+    "apt-daily-upgrade.timer",
+    "fwupd-refresh.timer",
+    "motd-news.timer",
+    "sysstat-collect.timer",
+    "anacron.timer",
+    "man-db.timer",
+    "unattended-upgrades.service",
+  ]
+
+  # Nothing is mounted from this platter, so parking it is free.
+  [[tiers.actions]]
+  type            = "exec"
+  command         = "hdparm -Y /dev/sda"
+  restore_command = "hdparm -z /dev/sda || true"
+
+# --------------------------------------------------------------------------
+# Tier 2 — the public edge, after 90s of sustained outage.
+# The router dies with the mains here, so these serve nobody meanwhile.
+# The delay means a brief flicker never tears anything down.
+# --------------------------------------------------------------------------
+[[tiers]]
+name  = "edge"
+after = "90s"
+
+  # Listed dependency-first: restore walks this list forward, and post_io
+  # attaches to nginx-proxy-manager's external network.
+  [[tiers.actions]]
+  type         = "docker"
+  stop_timeout = 20
+  containers   = [
+    "nginx-proxy-manager-app-1",
+    "wordpress_app",
+    "portainer",
+    "immich_machine_learning",
+    "immich_server",
+  ]
+
+  [[tiers.actions]]
+  type  = "systemd"
+  units = ["cloudflared.service"]
+
+# --------------------------------------------------------------------------
+# Tier 3 — stateful workloads, with generous grace periods.
+# --------------------------------------------------------------------------
+[[tiers]]
+name            = "stateful"
+below_percent   = 50
+below_remaining = "45m"
+
+  # poste.io runs an s6 tree with a Haraka mail queue and Dovecot; MySQL 5.7
+  # needs a clean InnoDB shutdown. The default 10s SIGTERM window is not enough
+  # for either, hence the long timeouts.
+  [[tiers.actions]]
+  type         = "docker"
+  stop_timeout = 90
+  containers   = ["mailserver"]
+
+  [[tiers.actions]]
+  type         = "docker"
+  stop_timeout = 60
+  containers   = ["wordpress_db", "immich_postgres"]
+
+  [[tiers.actions]]
+  type         = "docker"
+  stop_timeout = 30
+  containers   = ["immich_redis"]
+
+  # A spinning USB enclosure is both a drain and a corruption risk if the
+  # machine dies mid-write.
+  [[tiers.actions]]
+  type       = "mount"
+  mountpoint = "/nas"
+
+  [[tiers.actions]]
+  type  = "systemd"
+  units = ["docker.service", "docker.socket", "containerd.service"]
+
+# --------------------------------------------------------------------------
+# Tier 4 — the graphical session.
+# Placed late deliberately: this kills X and any GUI apps with it, so the
+# wall/desktop warnings from tiers 2 and 3 are the operator's notice.
+# --------------------------------------------------------------------------
+[[tiers]]
+name          = "desktop"
+below_percent = 30
+
+  [[tiers.actions]]
+  type  = "systemd"
+  units = ["lightdm.service"]
+
+# --------------------------------------------------------------------------
+# Tier 5 — the floor. The only irreversible step.
+#
+# Set deliberately low. This laptop has no "restore on AC power loss" in its
+# BIOS (verified: two post-death boots were 3h35m and 4h52m after the machine
+# died, both in the early evening -- someone walked over and pressed the
+# button), so a shutdown costs a physical trip. Every extra minute spent
+# waiting is another minute mains might return on its own.
+#
+# It is safe to be aggressive here precisely because the earlier tiers already
+# did the careful work: by the time this triggers, the databases and mail queue
+# were shut down cleanly at tier 3 and the desktop at tier 4. Almost nothing
+# corruptible is still running.
+[[tiers]]
+name            = "floor"
+below_percent   = 3
+below_remaining = "5m"
+shutdown        = true
