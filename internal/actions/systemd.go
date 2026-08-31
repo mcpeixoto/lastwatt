@@ -38,14 +38,25 @@ func isActive(ctx context.Context, unit string) bool {
 func (s *Systemd) Apply(ctx context.Context, dry bool) (json.RawMessage, error) {
 	u := systemdUndo{}
 	var errs []string
+
+	// Snapshot the whole active set BEFORE stopping anything.
+	//
+	// Interleaving the check with the stop loses units to cascading systemd
+	// dependencies: stopping cups.service also stops cups-browsed.service, so a
+	// later is-active check reports it inactive and it never makes it into the
+	// restore set. It then stays down forever after the outage. Found the hard
+	// way on exactly that pair.
 	for _, unit := range s.Units {
-		if !isActive(ctx, unit) {
-			continue
+		if isActive(ctx, unit) {
+			u.Active = append(u.Active, unit)
 		}
-		u.Active = append(u.Active, unit)
-		if dry {
-			continue
-		}
+	}
+	if dry {
+		b, _ := json.Marshal(u)
+		return b, nil
+	}
+
+	for _, unit := range u.Active {
 		if _, err := run(ctx, 120*time.Second, "systemctl", "stop", unit); err != nil {
 			errs = append(errs, err.Error())
 			continue
