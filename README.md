@@ -19,6 +19,19 @@ A laptop running as a home server already has a UPS bolted to it: its battery. B
 
 On the machine it was written for, that projects runtime from a measured **1 h 52 m** to roughly **4–5 h** on the same worn-out battery.
 
+### It also refuses to let the machine sleep
+
+A server that suspends is indistinguishable from a server that died. On the box
+this was written for, logind suspended the host twice in one day -- 5 h 11 m and
+27 m -- taking every container and the remote-access tunnel with it, with nothing
+actually broken and nobody able to get back in without walking to the keyboard.
+
+`lastwatt` holds a logind inhibitor lock for as long as it runs, so the host
+cannot suspend while the daemon is up. It is a lock rather than a masked
+`sleep.target` on purpose: it is reversible by construction, lasting exactly as
+long as the process and leaving no permanent edit behind. Disable with
+`inhibit_sleep = false` if the machine really is a laptop you close.
+
 ### On the numbers
 
 Runtime figures here are *measured*; savings are *projected*. That distinction matters, because many laptop ECs — including this one — report `power_now` as `0` while on mains, so the only honest way to measure a saving is an actual unplug test.

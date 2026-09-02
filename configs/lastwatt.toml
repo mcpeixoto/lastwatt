@@ -15,6 +15,16 @@ ewma_alpha    = 0.2       # ~5s time constant on the draw estimate
 state_file    = "/var/lib/lastwatt/state.json"
 report_dir    = "/var/lib/lastwatt/reports"
 
+# Stop the host suspending itself while lastwatt runs. A box that sheds load to
+# survive a mains outage has no business going to sleep and taking every service
+# on it down -- which is exactly what happened on the machine this was written
+# for: two unattended suspends in one day, 5h11m and 27m, and someone had to
+# walk over and press a key. Held as a logind inhibitor lock, so it lasts
+# exactly as long as the daemon and needs no permanent edit to the system.
+# Set false if this really is a laptop you close.
+inhibit_sleep = true
+inhibit_what  = "sleep:idle"   # "sleep" blocks suspend/hibernate; ":idle" also stops the idle timer asking
+
 [power]
 ac      = "AC0"
 battery = "BAT0"

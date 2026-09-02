@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/mcpeixoto/lastwatt/internal/awake"
 	"github.com/mcpeixoto/lastwatt/internal/notify"
 	"github.com/mcpeixoto/lastwatt/internal/policy"
 	"github.com/mcpeixoto/lastwatt/internal/power"
@@ -27,6 +28,8 @@ type daemon struct {
 	queue  *notify.Queue
 	log    *slog.Logger
 	dryRun bool
+
+	inhibit *awake.Inhibitor
 
 	designUWh      int64
 	outage         *report.Outage
@@ -70,6 +73,26 @@ func (d *daemon) Run(ctx context.Context) error {
 	d.log.Info("starting",
 		"version", version, "ac", d.supply.AC, "battery", d.supply.Bat,
 		"tiers", len(d.tiers), "level", d.st.Level)
+
+	// Take the sleep lock before anything else. A suspended host is
+	// indistinguishable from a dead one to everything that depends on it, and
+	// the daemon shedding load to keep the machine alive is exactly the wrong
+	// thing to let sleep through. Never fatal: on a host without logind we log
+	// it and carry on doing the job we can do.
+	if d.cfg.General.SleepInhibited() {
+		in, err := awake.Hold(ctx, d.cfg.General.InhibitWhat, "lastwatt keeps this host up; suspending would drop every service on it")
+		d.inhibit = in
+		if err != nil {
+			d.log.Warn("could not block suspend; this host can still sleep", "err", err)
+		} else {
+			d.log.Info("blocking suspend", "what", d.cfg.General.InhibitWhat)
+		}
+		defer func() {
+			if err := d.inhibit.Release(); err != nil {
+				d.log.Warn("releasing sleep inhibitor", "err", err)
+			}
+		}()
+	}
 
 	// Reconcile on startup. If a previous instance was killed mid-outage and
 	// mains has since returned, the machine is sitting shed with nobody to undo

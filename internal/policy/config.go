@@ -45,7 +45,18 @@ type GeneralCfg struct {
 	// RestoreDelay is how long mains must be stable before restoring. Guards
 	// against a flapping supply repeatedly tearing services up and down.
 	RestoreDelay Duration `toml:"restore_delay"`
+	// InhibitSleep stops the host suspending itself while lastwatt runs. A
+	// machine that sheds load to survive an outage has no business going to
+	// sleep and taking its services with it. Defaults to on; set false if this
+	// host really is a laptop you close.
+	InhibitSleep *bool `toml:"inhibit_sleep"`
+	// InhibitWhat is passed to logind. "sleep" blocks suspend/hibernate;
+	// "sleep:idle" also stops the idle timer asking.
+	InhibitWhat string `toml:"inhibit_what"`
 }
+
+// SleepInhibited reports the effective setting, defaulting to true.
+func (g GeneralCfg) SleepInhibited() bool { return g.InhibitSleep == nil || *g.InhibitSleep }
 
 type PowerCfg struct {
 	AC      string `toml:"ac"`
@@ -118,6 +129,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.General.RestoreDelay == 0 {
 		c.General.RestoreDelay = Duration(5 * time.Second)
+	}
+	if c.General.InhibitWhat == "" {
+		c.General.InhibitWhat = "sleep:idle"
 	}
 	if c.Notify.QueueFile == "" {
 		c.Notify.QueueFile = "/var/lib/lastwatt/notify-queue.json"
