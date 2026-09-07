@@ -82,17 +82,32 @@ func (o Outage) Render() string {
 
 	fmt.Fprintf(&b, "# Power outage report — %s\n\n", o.Host)
 	fmt.Fprintf(&b, "**Mains lost:** %s\n\n", o.Start.Format("2006-01-02 15:04:05 MST"))
-	if o.End.IsZero() {
+	switch {
+	case o.End.IsZero():
 		fmt.Fprintf(&b, "**Status:** ongoing (%s so far)\n\n", o.Duration().Round(time.Second))
-	} else {
+	case o.Survived:
 		fmt.Fprintf(&b, "**Mains restored:** %s\n\n", o.End.Format("2006-01-02 15:04:05 MST"))
+		fmt.Fprintf(&b, "**Ran on battery for:** %s\n\n", o.Duration().Round(time.Second))
+	default:
+		// The floor was reached: End is when we powered off, and mains had NOT
+		// returned. Calling that "mains restored" reads as "power came back and
+		// the machine shut down anyway", which is a different and much more
+		// alarming failure than the one that happened.
+		fmt.Fprintf(&b, "**Powered off at battery floor:** %s\n\n",
+			o.End.Format("2006-01-02 15:04:05 MST"))
+		fmt.Fprintf(&b, "**Mains had not returned.** The machine stays off until "+
+			"something powers it back on.\n\n")
 		fmt.Fprintf(&b, "**Ran on battery for:** %s\n\n", o.Duration().Round(time.Second))
 	}
 
 	b.WriteString("## Battery\n\n")
 	fmt.Fprintf(&b, "| | |\n|---|---|\n")
 	fmt.Fprintf(&b, "| Charge at outage start | %.1f%% |\n", o.StartPercent)
-	fmt.Fprintf(&b, "| Charge at restore | %.1f%% |\n", o.EndPercent)
+	label := "Charge at restore"
+	if !o.Survived && !o.End.IsZero() {
+		label = "Charge at shutdown"
+	}
+	fmt.Fprintf(&b, "| %s | %.1f%% |\n", label, o.EndPercent)
 	fmt.Fprintf(&b, "| Consumed | %.1f%% of pack |\n", o.StartPercent-o.EndPercent)
 	if o.EnergyFullWh > 0 {
 		fmt.Fprintf(&b, "| Energy used | %.1f Wh of %.1f Wh |\n",
@@ -118,8 +133,12 @@ func (o Outage) Render() string {
 				t.At.Format("15:04:05"), verb, t.Level, t.Name, t.Reason)
 		}
 		if !o.End.IsZero() {
-			fmt.Fprintf(&b, "%s  mains restored (battery %.1f%%)\n",
-				o.End.Format("15:04:05"), o.EndPercent)
+			outcome := "mains restored"
+			if !o.Survived {
+				outcome = "battery floor reached — powered off"
+			}
+			fmt.Fprintf(&b, "%s  %s (battery %.1f%%)\n",
+				o.End.Format("15:04:05"), outcome, o.EndPercent)
 		}
 		b.WriteString("```\n")
 	}
